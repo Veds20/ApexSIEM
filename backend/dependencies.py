@@ -1,6 +1,5 @@
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from jose import JWTError
 from sqlalchemy.orm import Session
 
 from .auth import decode_token
@@ -16,15 +15,15 @@ def get_current_user(
 ):
     token = credentials.credentials
 
-    try:
-        payload = decode_token(token)
-        username: str = payload.get("sub")
-    except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+    payload = decode_token(token)
+    username: str = payload.get("sub")
+
+    if username is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
     user = db.query(User).filter(User.username == username).first()
 
     if user is None:
-        raise HTTPException(status_code=401, detail="User not found")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
 
     return user
