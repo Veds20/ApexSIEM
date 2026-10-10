@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 from typing import Optional
+import os
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -8,12 +9,10 @@ from sqlalchemy.orm import Session
 
 from backend.database import SessionLocal
 from backend.models import User
+from backend.config import get_settings
 
 
-SECRET_KEY = "supersecretkey"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60
-
+settings = get_settings()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
@@ -25,51 +24,42 @@ def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
 
 
-def authenticate_user(username: str, password: str):
-    db: Session = SessionLocal()
+def authenticate_user(username: str, password: str, db: Optional[Session] = None):
+    close_db = False
+    if db is None:
+        db = SessionLocal()
+        close_db = True
 
-    user = db.query(User).filter(User.username == username).first()
-    db.close()
-
-    if not user:
-        return False
-
-    if not verify_password(password, user.hashed_password):
-        return False
-
-    return user
+    try:
+        user = db.query(User).filter(User.username == username).first()
+        if not user:
+            return False
+        if not verify_password(password, user.hashed_password):
+            return False
+        return user
+    finally:
+        if close_db:
+            db.close()
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
-
     to_encode = data.copy()
-
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-
+    expire = datetime.utcnow() + (
+        expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    )
     to_encode.update({"exp": expire})
-
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-
-    return encoded_jwt
+    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
 def decode_token(token: str):
-
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
-
-        if username is None:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        if payload.get("sub") is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token"
             )
-
-        return username
-
+        return payload
     except JWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -78,16 +68,23 @@ def decode_token(token: str):
 
 
 def create_default_admin():
+    # Admin creation is an explicit bootstrap operation, disabled by default.
+    if os.getenv("CREATE_DEFAULT_ADMIN", "false").strip().lower() != "true":
+        return
+
     db: Session = SessionLocal()
+    try:
+        user = db.query(User).filter(User.username == "admin").first()
+        if user:
+            return
 
-    user = db.query(User).filter(User.username == "admin").first()
+        admin_password = os.getenv("DEFAULT_ADMIN_PASSWORD")
+        if not admin_password:
+            raise RuntimeError(
+                "CREATE_DEFAULT_ADMIN=true requires DEFAULT_ADMIN_PASSWORD to be set"
+            )
 
-    if not user:
-        admin = User(
-            username="admin",
-            hashed_password=get_password_hash("admin123")
-        )
-        db.add(admin)
+        db.add(User(username="admin", hashed_password=get_password_hash(admin_password)))
         db.commit()
-
-    db.close()
+    finally:
+        db.close()

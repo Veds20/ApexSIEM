@@ -1,346 +1,306 @@
-import { useState, useEffect } from "react";
-import { motion } from "framer-motion";
+import { useEffect, useState } from "react";
 import {
-    AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
-    XAxis, YAxis, Tooltip, ResponsiveContainer,
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  Cell,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
 } from "recharts";
 import Navbar from "../components/Navbar";
 import AnalyzeModal from "../components/AnalyzeModal";
 
-const API = "http://localhost:8001";
-const COLORS = ["#00e5cc", "#7c3aed", "#ff4d4d", "#ffd700", "#4ade80", "#f97316"];
+const API = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8001";
+const PALETTE = ["#d65a35", "#73856b", "#a97619", "#5d6255", "#b98d7b", "#929487"];
+const SEVERITY_COLORS = { HIGH: "#b84636", MEDIUM: "#a97619", LOW: "#73856b" };
 
-const SEV_COLOR = { HIGH: "#ff4d4d", MEDIUM: "#ffd700", LOW: "#00e5cc" };
+function formatTimestamp(value) {
+  if (!value) return "—";
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? String(value) : parsed.toLocaleString();
+}
+
+function Severity({ value }) {
+  const severityClass = value === "HIGH" ? "severity-high" : value === "MEDIUM" ? "severity-medium" : value === "LOW" ? "severity-low" : "severity-unknown";
+  return <span className={"severity " + severityClass}>{value || "UNKNOWN"}</span>;
+}
+
+function ChartTooltip({ active, payload, label }) {
+  if (!active || !payload || payload.length === 0) return null;
+  return (
+    <div className="chart-tooltip">
+      {label && <div style={{ marginBottom: 5, color: "var(--muted)" }}>{label}</div>}
+      {payload.map((entry) => (
+        <div key={entry.dataKey || entry.name}>
+          <span style={{ color: entry.color || "var(--signal)" }}>{entry.name || entry.dataKey}</span>
+          <span> · {entry.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export default function Dashboard() {
-    const [alerts, setAlerts] = useState([]);
-    const [stats, setStats] = useState({});
-    const [filter, setFilter] = useState("ALL");
-    const [selected, setSelected] = useState(null);
-    const [lastSync, setLastSync] = useState("");
-    const [noData, setNoData] = useState(false);
+  const [alerts, setAlerts] = useState([]);
+  const [stats, setStats] = useState({});
+  const [filter, setFilter] = useState("ALL");
+  const [query, setQuery] = useState("");
+  const [selected, setSelected] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [apiError, setApiError] = useState("");
+  const [lastSync, setLastSync] = useState("");
+  const [refreshTick, setRefreshTick] = useState(0);
 
-    const fetchData = async () => {
-        try {
-            const token = localStorage.getItem("token");
-            const headers = { Authorization: `Bearer ${token}` };
+  useEffect(() => {
+    let active = true;
 
-            const [aRes, sRes] = await Promise.all([
-                fetch(`${API}/alerts`, { headers }),
-                fetch(`${API}/stats`, { headers }),
-            ]);
-            const [aData, sData] = await Promise.all([aRes.json(), sRes.json()]);
+    const sync = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        const headers = { Authorization: "Bearer " + token };
+        const [alertsResponse, statsResponse] = await Promise.all([
+          fetch(API + "/alerts", { headers }),
+          fetch(API + "/stats", { headers }),
+        ]);
 
-            setAlerts(aData);
-            setStats(sData);
-            setNoData(sData.no_data === true || sData.total === 0);
-            setLastSync(new Date().toLocaleTimeString());
-        } catch (e) {
-            console.error("Fetch error:", e);
+        if (!alertsResponse.ok || !statsResponse.ok) {
+          throw new Error("API request failed (" + (!alertsResponse.ok ? alertsResponse.status : statsResponse.status) + ").");
         }
+
+        const [alertsData, statsData] = await Promise.all([alertsResponse.json(), statsResponse.json()]);
+        if (!Array.isArray(alertsData) || !statsData || typeof statsData !== "object") {
+          throw new Error("The API returned an unexpected response format.");
+        }
+
+        if (!active) return;
+        setAlerts(alertsData);
+        setStats(statsData);
+        setApiError("");
+        setLastSync(new Date().toLocaleTimeString());
+      } catch {
+        if (active) setApiError("The alert API could not be reached or returned an invalid response. Previously loaded data is retained.");
+      } finally {
+        if (active) setLoading(false);
+      }
     };
 
-    useEffect(() => {
-        fetchData();
-        const interval = setInterval(fetchData, 3000);
-        return () => clearInterval(interval);
-    }, []);
+    sync();
+    const interval = window.setInterval(sync, 5000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [refreshTick]);
 
-    // Severity distribution
-    const sevData = [
-        { name: "HIGH", count: stats.high || 0 },
-        { name: "MED", count: stats.medium || 0 },
-        { name: "LOW", count: stats.low || 0 },
-    ];
-    const sevColors = ["#ff4d4d", "#ffd700", "#00e5cc"];
+  const noData = stats.no_data === true || Number(stats.total || 0) === 0;
+  const severityData = [
+    { name: "High", count: Number(stats.high || 0), color: SEVERITY_COLORS.HIGH },
+    { name: "Medium", count: Number(stats.medium || 0), color: SEVERITY_COLORS.MEDIUM },
+    { name: "Low", count: Number(stats.low || 0), color: SEVERITY_COLORS.LOW },
+  ];
 
-    // Attack type distribution (real types from actual logs)
-    const attackCounts = alerts.reduce((acc, a) => {
-        acc[a.attack_type] = (acc[a.attack_type] || 0) + 1;
-        return acc;
-    }, {});
-    const pieData = Object.entries(attackCounts)
-        .map(([name, value]) => ({ name, value }))
-        .sort((a, b) => b.value - a.value)
-        .slice(0, 8);
+  const attackCounts = alerts.reduce((counts, alert) => {
+    const type = alert.attack_type || "Unclassified";
+    counts[type] = (counts[type] || 0) + 1;
+    return counts;
+  }, {});
+  const attackData = Object.entries(attackCounts)
+    .map(([name, value]) => ({ name: name.replace(/_/g, " "), value }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 7);
 
-    // Timeline — alerts per minute bucket
-    const timelineData = (() => {
-        const buckets = {};
-        alerts.forEach(a => {
-            if (!a.timestamp) return;
-            const d = new Date(a.timestamp);
-            const key = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-            buckets[key] = (buckets[key] || 0) + 1;
-        });
-        return Object.entries(buckets)
-            .map(([time, count]) => ({ time, count }))
-            .slice(-15);
-    })();
+  const timelineData = (() => {
+    const buckets = new Map();
+    alerts.forEach((alert) => {
+      if (!alert.timestamp) return;
+      const date = new Date(alert.timestamp);
+      if (Number.isNaN(date.getTime())) return;
+      const key = date.getHours().toString().padStart(2, "0") + ":" + date.getMinutes().toString().padStart(2, "0");
+      buckets.set(key, (buckets.get(key) || 0) + 1);
+    });
+    return Array.from(buckets, ([time, count]) => ({ time, count })).slice(-15);
+  })();
 
-    const filtered = filter === "ALL" ? alerts : alerts.filter(a => a.severity === filter);
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredAlerts = alerts.filter((alert) => {
+    const severityMatch = filter === "ALL" || alert.severity === filter;
+    const searchable = [alert.id, alert.source_ip, alert.attack_type, alert.event_type, alert.description, alert.log_source]
+      .filter(Boolean).join(" ").toLowerCase();
+    return severityMatch && (!normalizedQuery || searchable.includes(normalizedQuery));
+  });
 
-    const statCards = [
-        { label: "TOTAL ALERTS", value: stats.total || 0, color: "#00e5cc" },
-        { label: "CRITICAL", value: stats.high || 0, color: "#ff4d4d" },
-        { label: "MEDIUM", value: stats.medium || 0, color: "#ffd700" },
-        { label: "LOW RISK", value: stats.low || 0, color: "#4ade80" },
-        { label: "PRIORITY", value: stats.priority || 0, color: "#c084fc" },
-        { label: "ANOMALIES", value: stats.anomalies || 0, color: "#7c3aed" },
-    ];
+  const metrics = [
+    { label: "Total alerts", value: stats.total || 0, tone: "tone-neutral", note: "Reported by the stats endpoint" },
+    { label: "High severity", value: stats.high || 0, tone: "tone-high", note: "Requires analyst triage" },
+    { label: "Medium", value: stats.medium || 0, tone: "tone-medium", note: "Review supporting context" },
+    { label: "Low", value: stats.low || 0, tone: "tone-low", note: "Lower assigned severity" },
+    { label: "Priority queue", value: stats.priority || 0, tone: "tone-priority", note: "Reported by the API" },
+    { label: "Anomalies", value: stats.anomalies || 0, tone: "tone-neutral", note: "Reported by detection pipeline" },
+  ];
 
-    return (
-        <div style={{ background: "#060e1c", minHeight: "100vh", color: "#e0e0e0", fontFamily: "'JetBrains Mono', monospace" }}>
-            <Navbar />
-
-            <div style={{ padding: "20px 28px" }}>
-                {/* Header */}
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                        <div style={{ width: "4px", height: "20px", background: "#00e5cc" }} />
-                        <span style={{ fontSize: "13px", letterSpacing: "3px", color: "#aaa" }}>
-                            SECURITY OPERATIONS CENTER
-                        </span>
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "11px", color: "#4a8a6a" }}>
-                        <span style={{
-                            width: "8px", height: "8px", borderRadius: "50%",
-                            background: noData ? "#ffd700" : "#00e5cc",
-                            display: "inline-block",
-                            boxShadow: noData ? "0 0 6px #ffd700" : "0 0 6px #00e5cc",
-                        }} />
-                        {noData ? "WAITING FOR REAL LOGS" : "LIVE"} &nbsp;|&nbsp; Last sync {lastSync}
-                    </div>
-                </div>
-
-                {/* No data banner */}
-                {noData && (
-                    <motion.div
-                        initial={{ opacity: 0, y: -10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        style={{
-                            background: "#0a1628",
-                            border: "1px solid #ffd70044",
-                            borderRadius: "8px",
-                            padding: "18px 24px",
-                            marginBottom: "20px",
-                            color: "#ffd700",
-                            fontSize: "13px",
-                            lineHeight: 1.8,
-                        }}
-                    >
-                        <div style={{ fontWeight: 700, marginBottom: "6px" }}>⚠ NO DATA AVAILABLE</div>
-                        <div style={{ color: "#8a8a6a", fontSize: "12px" }}>
-                            No real log sources detected. This SIEM does not generate simulated data.
-                            <br />
-                            Real log sources monitored: Windows Event Log (Security/System/PowerShell),
-                            /var/log/auth.log, /var/log/syslog, UFW, iptables, Nginx, Zeek, Suricata.
-                            <br />
-                            Start generating real activity (e.g. failed SSH/RDP logins) for alerts to appear.
-                        </div>
-                    </motion.div>
-                )}
-
-                {/* Stat cards */}
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: "14px", marginBottom: "20px" }}>
-                    {statCards.map(({ label, value, color }) => (
-                        <motion.div
-                            key={label}
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            style={{
-                                background: "#0a1628",
-                                border: `1px solid ${color}33`,
-                                borderBottom: `2px solid ${color}`,
-                                borderRadius: "6px",
-                                padding: "16px",
-                            }}
-                        >
-                            <div style={{ fontSize: "26px", fontWeight: 700, color }}>{value}</div>
-                            <div style={{ fontSize: "9px", color: "#4a6a8a", letterSpacing: "1.5px", marginTop: "4px" }}>{label}</div>
-                        </motion.div>
-                    ))}
-                </div>
-
-                {/* Charts row */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "14px", marginBottom: "20px" }}>
-                    {/* Severity bar chart */}
-                    <div style={{ background: "#0a1628", border: "1px solid #1a2a4a", borderRadius: "8px", padding: "16px" }}>
-                        <div style={{ fontSize: "10px", color: "#4a6a8a", letterSpacing: "2px", marginBottom: "12px" }}>
-                            SEVERITY DISTRIBUTION
-                        </div>
-                        <ResponsiveContainer width="100%" height={160}>
-                            <BarChart data={sevData}>
-                                <XAxis dataKey="name" tick={{ fill: "#4a6a8a", fontSize: 10 }} />
-                                <YAxis tick={{ fill: "#4a6a8a", fontSize: 10 }} />
-                                <Tooltip contentStyle={{ background: "#0a1628", border: "1px solid #1a2a4a", fontFamily: "inherit" }} />
-                                <Bar dataKey="count">
-                                    {sevData.map((_, i) => <Cell key={i} fill={sevColors[i]} />)}
-                                </Bar>
-                            </BarChart>
-                        </ResponsiveContainer>
-                    </div>
-
-                    {/* Attack types pie */}
-                    <div style={{ background: "#0a1628", border: "1px solid #1a2a4a", borderRadius: "8px", padding: "16px" }}>
-                        <div style={{ fontSize: "10px", color: "#4a6a8a", letterSpacing: "2px", marginBottom: "12px" }}>
-                            ATTACK TYPES
-                        </div>
-                        {pieData.length > 0 ? (
-                            <>
-                                <ResponsiveContainer width="100%" height={140}>
-                                    <PieChart>
-                                        <Pie data={pieData} cx="50%" cy="50%" innerRadius={45} outerRadius={65}
-                                            dataKey="value" nameKey="name">
-                                            {pieData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                                        </Pie>
-                                        <Tooltip contentStyle={{ background: "#0a1628", border: "1px solid #1a2a4a", fontFamily: "inherit", fontSize: 11 }} />
-                                    </PieChart>
-                                </ResponsiveContainer>
-                                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "8px" }}>
-                                    {pieData.map((d, i) => (
-                                        <span key={d.name} style={{ fontSize: "10px", color: COLORS[i % COLORS.length], display: "flex", alignItems: "center", gap: "4px" }}>
-                                            <span style={{ width: 6, height: 6, borderRadius: "50%", background: COLORS[i % COLORS.length], display: "inline-block" }} />
-                                            {d.name}
-                                        </span>
-                                    ))}
-                                </div>
-                            </>
-                        ) : (
-                            <div style={{ height: 160, display: "flex", alignItems: "center", justifyContent: "center", color: "#4a6a8a", fontSize: 12 }}>
-                                No data
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Timeline area chart */}
-                    <div style={{ background: "#0a1628", border: "1px solid #1a2a4a", borderRadius: "8px", padding: "16px" }}>
-                        <div style={{ fontSize: "10px", color: "#4a6a8a", letterSpacing: "2px", marginBottom: "12px" }}>
-                            ALERT TIMELINE
-                        </div>
-                        <ResponsiveContainer width="100%" height={160}>
-                            <AreaChart data={timelineData}>
-                                <defs>
-                                    <linearGradient id="tealGrad" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="#00e5cc" stopOpacity={0.3} />
-                                        <stop offset="95%" stopColor="#00e5cc" stopOpacity={0} />
-                                    </linearGradient>
-                                </defs>
-                                <XAxis dataKey="time" tick={{ fill: "#4a6a8a", fontSize: 9 }} />
-                                <YAxis tick={{ fill: "#4a6a8a", fontSize: 9 }} />
-                                <Tooltip contentStyle={{ background: "#0a1628", border: "1px solid #1a2a4a", fontFamily: "inherit" }} />
-                                <Area type="monotone" dataKey="count" stroke="#00e5cc" fill="url(#tealGrad)" strokeWidth={2} />
-                            </AreaChart>
-                        </ResponsiveContainer>
-                    </div>
-                </div>
-
-                {/* Live alert feed */}
-                <div style={{ background: "#0a1628", border: "1px solid #1a2a4a", borderRadius: "8px", padding: "16px" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-                        <div style={{ fontSize: "10px", color: "#4a6a8a", letterSpacing: "2px" }}>LIVE ALERT FEED</div>
-                        <div style={{ display: "flex", gap: "8px" }}>
-                            {["ALL", "HIGH", "MEDIUM", "LOW"].map(f => (
-                                <button
-                                    key={f}
-                                    onClick={() => setFilter(f)}
-                                    style={{
-                                        background: filter === f ? "#00e5cc22" : "transparent",
-                                        border: `1px solid ${filter === f ? "#00e5cc" : "#1a2a4a"}`,
-                                        color: filter === f ? "#00e5cc" : "#4a6a8a",
-                                        padding: "4px 12px", fontSize: "10px",
-                                        fontFamily: "inherit", cursor: "pointer", borderRadius: "4px",
-                                        letterSpacing: "1px",
-                                    }}
-                                >{f}</button>
-                            ))}
-                        </div>
-                    </div>
-
-                    <div style={{ overflowX: "auto" }}>
-                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
-                            <thead>
-                                <tr style={{ color: "#4a6a8a", fontSize: "10px", letterSpacing: "1px" }}>
-                                    {["ID", "SOURCE IP", "ATTACK TYPE", "EVENT", "SEVERITY", "ANOMALY", "PRIORITY", "TIMESTAMP", "ACTION"].map(h => (
-                                        <th key={h} style={{ textAlign: "left", padding: "8px 10px", borderBottom: "1px solid #1a2a4a", whiteSpace: "nowrap" }}>
-                                            {h}
-                                        </th>
-                                    ))}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {filtered.length === 0 ? (
-                                    <tr>
-                                        <td colSpan={9} style={{ padding: "32px", textAlign: "center", color: "#4a6a8a" }}>
-                                            {noData ? "No real logs ingested yet. Waiting for real events…" : "No alerts match this filter."}
-                                        </td>
-                                    </tr>
-                                ) : filtered.map((alert, i) => (
-                                    <motion.tr
-                                        key={alert.id}
-                                        initial={{ opacity: 0 }}
-                                        animate={{ opacity: 1 }}
-                                        transition={{ delay: i * 0.02 }}
-                                        style={{
-                                            borderLeft: alert.priority ? "3px solid #ff4d4d" : "3px solid transparent",
-                                            borderBottom: "1px solid #0f1e38",
-                                        }}
-                                    >
-                                        <td style={{ padding: "10px", color: "#4a6a8a" }}>{alert.id}</td>
-                                        <td style={{ padding: "10px", color: "#00e5cc" }}>{alert.source_ip}</td>
-                                        <td style={{ padding: "10px" }}>
-                                            <span style={{
-                                                background: "#1a2a4a", borderRadius: "4px",
-                                                padding: "3px 8px", color: "#c0d8f0", fontSize: "11px",
-                                            }}>
-                                                {alert.attack_type}
-                                            </span>
-                                        </td>
-                                        <td style={{ padding: "10px", color: "#8a9aaa", maxWidth: "200px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                            <span title={alert.description || alert.event_type || ""}>
-                                                {alert.event_type || "—"}
-                                            </span>
-                                        </td>
-                                        <td style={{ padding: "10px" }}>
-                                            <span style={{
-                                                background: `${SEV_COLOR[alert.severity]}22`,
-                                                color: SEV_COLOR[alert.severity],
-                                                border: `1px solid ${SEV_COLOR[alert.severity]}44`,
-                                                borderRadius: "4px", padding: "2px 8px", fontSize: "11px",
-                                            }}>
-                                                {alert.severity}
-                                            </span>
-                                        </td>
-                                        <td style={{ padding: "10px", color: alert.is_anomaly ? "#ffd700" : "#4a6a8a" }}>
-                                            {alert.is_anomaly ? "⚡" : "—"}
-                                        </td>
-                                        <td style={{ padding: "10px" }}>
-                                            {alert.priority ? <span style={{ color: "#ff4d4d", fontSize: "14px" }}>●</span> : "—"}
-                                        </td>
-                                        <td style={{ padding: "10px", color: "#4a6a8a", whiteSpace: "nowrap" }}>
-                                            {alert.timestamp ? new Date(alert.timestamp).toLocaleString() : "—"}
-                                        </td>
-                                        <td style={{ padding: "10px" }}>
-                                            <button
-                                                onClick={() => setSelected(alert)}
-                                                style={{
-                                                    background: "#00e5cc22", border: "1px solid #00e5cc44",
-                                                    color: "#00e5cc", padding: "4px 12px",
-                                                    fontFamily: "inherit", fontSize: "10px",
-                                                    cursor: "pointer", borderRadius: "4px",
-                                                    letterSpacing: "1px",
-                                                }}
-                                            >ANALYZE</button>
-                                        </td>
-                                    </motion.tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
+  return (
+    <div className="app-shell">
+      <Navbar />
+      <main className="app-main">
+        <div className="page-wrap">
+          <header className="page-topline">
+            <div>
+              <div className="eyebrow">Security operations / 01</div>
+              <h1 className="page-title">Overview</h1>
+              <p className="page-subtitle">Review alert volume, severity distribution, and the events currently returned by the API.</p>
             </div>
+            <div className="page-meta">
+              <span className={"status-chip " + (apiError ? "is-error" : loading ? "is-neutral" : "is-healthy")}>
+                <span className="status-dot" />
+                {apiError ? "API unavailable" : loading ? "Connecting" : "API responding"}
+              </span>
+              <span>Last successful poll: {lastSync || "not yet"}</span>
+              <button className="button-secondary" type="button" onClick={() => { setLoading(true); setRefreshTick((tick) => tick + 1); }}>
+                Refresh now
+              </button>
+            </div>
+          </header>
 
-            {selected && <AnalyzeModal alert={selected} onClose={() => setSelected(null)} />}
+          {apiError && <div className="inline-alert" role="alert">{apiError}</div>}
+          {!apiError && noData && !loading && (
+            <div className="inline-notice">
+              <strong>No alert data reported.</strong> The API response currently contains no alerts. This view does not generate example events or infer collector health.
+            </div>
+          )}
+
+          <section className="metric-grid" aria-label="Alert metrics">
+            {metrics.map((metric, index) => (
+              <article className={"metric-card " + metric.tone} key={metric.label}>
+                <div className="metric-label">
+                  <span>{metric.label}</span><span className="metric-index">{String(index + 1).padStart(2, "0")}</span>
+                </div>
+                <div className="metric-value">{Number(metric.value || 0).toLocaleString()}</div>
+                <div className="metric-note">{metric.note}</div>
+              </article>
+            ))}
+          </section>
+
+          <section className="chart-grid" aria-label="Alert analysis charts">
+            <article className="panel">
+              <div className="panel-header">
+                <div><h2 className="panel-title">Severity distribution</h2><div className="panel-kicker">Counts from the stats endpoint</div></div>
+              </div>
+              <div className="chart-body">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={severityData} margin={{ top: 8, right: 5, left: -20, bottom: 0 }}>
+                    <XAxis dataKey="name" tick={{ fill: "#707168", fontSize: 10 }} axisLine={{ stroke: "#d9d8ce" }} tickLine={false} />
+                    <YAxis allowDecimals={false} tick={{ fill: "#929287", fontSize: 10 }} axisLine={false} tickLine={false} />
+                    <Tooltip content={<ChartTooltip />} cursor={{ fill: "#eeede5" }} />
+                    <Bar dataKey="count" name="Alerts" radius={[2, 2, 0, 0]} maxBarSize={34}>
+                      {severityData.map((item) => <Cell key={item.name} fill={item.color} />)}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </article>
+
+            <article className="panel">
+              <div className="panel-header">
+                <div><h2 className="panel-title">Detection categories</h2><div className="panel-kicker">Distribution of alerts currently loaded</div></div>
+              </div>
+              {attackData.length > 0 ? (
+                <div className="chart-body">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={attackData} dataKey="value" nameKey="name" innerRadius={43} outerRadius={66} paddingAngle={2}>
+                        {attackData.map((item, index) => <Cell key={item.name} fill={PALETTE[index % PALETTE.length]} />)}
+                      </Pie>
+                      <Tooltip content={<ChartTooltip />} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : <div className="chart-empty">No category data returned.</div>}
+            </article>
+
+            <article className="panel">
+              <div className="panel-header">
+                <div><h2 className="panel-title">Alert timeline</h2><div className="panel-kicker">Events grouped by local minute</div></div>
+              </div>
+              {timelineData.length > 0 ? (
+                <div className="chart-body">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={timelineData} margin={{ top: 8, right: 4, left: -20, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="eventVolumeFill" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#d65a35" stopOpacity={0.24} />
+                          <stop offset="100%" stopColor="#d65a35" stopOpacity={0.015} />
+                        </linearGradient>
+                      </defs>
+                      <XAxis dataKey="time" tick={{ fill: "#929287", fontSize: 9 }} axisLine={{ stroke: "#d9d8ce" }} tickLine={false} />
+                      <YAxis allowDecimals={false} tick={{ fill: "#929287", fontSize: 10 }} axisLine={false} tickLine={false} />
+                      <Tooltip content={<ChartTooltip />} />
+                      <Area type="monotone" dataKey="count" name="Events" stroke="#d65a35" fill="url(#eventVolumeFill)" strokeWidth={1.8} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : <div className="chart-empty">No valid timestamps to chart.</div>}
+            </article>
+          </section>
+
+          <section className="panel">
+            <div className="panel-header">
+              <div>
+                <h2 className="panel-title">Alert records</h2>
+                <div className="panel-kicker">{filteredAlerts.length} displayed of {alerts.length} records returned by the API</div>
+              </div>
+              <div className="toolbar-right">
+                <input className="search-field" aria-label="Search alerts" placeholder="Search ID, source, detection…" value={query} onChange={(event) => setQuery(event.target.value)} />
+              </div>
+            </div>
+            <div className="panel-header">
+              <div className="filter-row" aria-label="Filter alerts by severity">
+                {["ALL", "HIGH", "MEDIUM", "LOW"].map((severity) => (
+                  <button className="filter-button" type="button" key={severity} aria-pressed={filter === severity} onClick={() => setFilter(severity)}>
+                    {severity === "ALL" ? "All severities" : severity}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="table-scroll">
+              <table className="data-table">
+                <thead><tr>
+                  <th scope="col">ID</th><th scope="col">Observed</th><th scope="col">Source</th><th scope="col">Detection type</th><th scope="col">Event</th><th scope="col">Severity</th><th scope="col">Signals</th><th scope="col">Action</th>
+                </tr></thead>
+                <tbody>
+                  {loading && alerts.length === 0 ? (
+                    Array.from({ length: 5 }, (_, index) => <tr key={index}><td colSpan={8}><div className="skeleton-row" /></td></tr>)
+                  ) : filteredAlerts.length === 0 ? (
+                    <tr><td colSpan={8}>
+                      <div className="empty-state">
+                        <div className="empty-mark">—</div>
+                        <p className="empty-title">{alerts.length ? "No records match these filters" : "No alert records returned"}</p>
+                        <p className="empty-copy">{alerts.length ? "Change the severity filter or search terms to widen the results." : "When the API returns alert records, they will appear here. No placeholder rows are inserted."}</p>
+                      </div>
+                    </td></tr>
+                  ) : filteredAlerts.map((alert) => (
+                    <tr key={alert.id}>
+                      <td className="cell-mono">#{alert.id}</td>
+                      <td className="cell-mono">{formatTimestamp(alert.timestamp)}</td>
+                      <td className="cell-mono">{alert.source_ip || "Not recorded"}</td>
+                      <td className="cell-primary">{String(alert.attack_type || "Unclassified").replace(/_/g, " ")}</td>
+                      <td className="cell-truncate" title={alert.description || alert.event_type || ""}>{alert.event_type || alert.description || "—"}</td>
+                      <td><Severity value={alert.severity} /></td>
+                      <td>{alert.is_anomaly ? <span className="pill">Anomaly flagged</span> : alert.priority ? <span className="priority-indicator">Priority</span> : <span className="cell-muted">—</span>}</td>
+                      <td><button className="table-action" type="button" onClick={() => setSelected(alert)}>Review evidence →</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
         </div>
-    );
+      </main>
+      {selected && <AnalyzeModal alert={selected} onClose={() => setSelected(null)} />}
+    </div>
+  );
 }

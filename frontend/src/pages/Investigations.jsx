@@ -1,152 +1,148 @@
-import { useState, useEffect } from "react";
-import { motion } from "framer-motion";
+import { useEffect, useState } from "react";
 import Navbar from "../components/Navbar";
 
-const API = "http://localhost:8001";
+const API = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8001";
 
 const STATUS_CONFIG = {
-    "Investigated": { color: "#00e5cc", icon: "✓", label: "INVESTIGATED" },
-    "Under Progress": { color: "#ffd700", icon: "⟳", label: "UNDER PROGRESS" },
-    "Closed": { color: "#4ade80", icon: "✗", label: "CLOSED" },
+  "Investigated": { label: "Investigated", className: "is-done" },
+  "Under Progress": { label: "Under progress", className: "is-progress" },
+  "Closed": { label: "Closed", className: "is-done" },
 };
 
+function Severity({ value }) {
+  const severityClass = value === "HIGH" ? "severity-high" : value === "MEDIUM" ? "severity-medium" : value === "LOW" ? "severity-low" : "severity-unknown";
+  return <span className={"severity " + severityClass}>{value || "UNKNOWN"}</span>;
+}
+
+function formatTimestamp(value) {
+  if (!value) return "—";
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? String(value) : parsed.toLocaleString();
+}
+
 export default function Investigations() {
-    const [investigations, setInvestigations] = useState([]);
-    const [filter, setFilter] = useState("ALL");
+  const [investigations, setInvestigations] = useState([]);
+  const [filter, setFilter] = useState("ALL");
+  const [loading, setLoading] = useState(true);
+  const [apiError, setApiError] = useState("");
+  const [refreshTick, setRefreshTick] = useState(0);
 
-    const fetchInvestigations = async () => {
-        try {
-            const token = localStorage.getItem("token");
-            const res = await fetch(`${API}/investigations`, { headers: { Authorization: `Bearer ${token}` } });
-            const data = await res.json();
-            setInvestigations(data);
-        } catch (e) {
-            console.error(e);
-        }
+  useEffect(() => {
+    let active = true;
+    const sync = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        const response = await fetch(API + "/investigations", { headers: { Authorization: "Bearer " + token } });
+        if (!response.ok) throw new Error("API request failed.");
+        const data = await response.json();
+        if (!Array.isArray(data)) throw new Error("Unexpected API response.");
+        if (!active) return;
+        setInvestigations(data);
+        setApiError("");
+      } catch {
+        if (active) setApiError("Investigation records could not be refreshed. Previously loaded records are retained.");
+      } finally {
+        if (active) setLoading(false);
+      }
     };
+    sync();
+    const interval = window.setInterval(sync, 5000);
+    return () => { active = false; window.clearInterval(interval); };
+  }, [refreshTick]);
 
-    useEffect(() => {
-        fetchInvestigations();
-        const interval = setInterval(fetchInvestigations, 5000);
-        return () => clearInterval(interval);
-    }, []);
+  const filtered = filter === "ALL" ? investigations : investigations.filter((item) => item.investigation_status === filter);
+  const counts = {
+    total: investigations.length,
+    progress: investigations.filter((item) => item.investigation_status === "Under Progress").length,
+    investigated: investigations.filter((item) => item.investigation_status === "Investigated").length,
+    closed: investigations.filter((item) => item.investigation_status === "Closed").length,
+  };
 
-    const filtered = filter === "ALL" ? investigations : investigations.filter(i => i.investigation_status === filter);
-
-    const counts = {
-        total: investigations.length,
-        investigated: investigations.filter(i => i.investigation_status === "Investigated").length,
-        progress: investigations.filter(i => i.investigation_status === "Under Progress").length,
-        closed: investigations.filter(i => i.investigation_status === "Closed").length,
-    };
-
-    const SEV_COLOR = { HIGH: "#ff4d4d", MEDIUM: "#ffd700", LOW: "#00e5cc" };
-
-    return (
-        <div style={{ background: "#060e1c", minHeight: "100vh", color: "#e0e0e0", fontFamily: "'JetBrains Mono', monospace" }}>
-            <Navbar />
-            <div style={{ padding: "20px 28px" }}>
-
-                {/* Header */}
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-                    <div>
-                        <div style={{ fontSize: "14px", letterSpacing: "3px", color: "#00e5cc", fontWeight: 700 }}>INVESTIGATIONS</div>
-                        <div style={{ fontSize: "11px", color: "#4a6a8a", marginTop: "4px" }}>Alerts under analyst review — removed from main dashboard</div>
-                    </div>
-                    <div style={{ display: "flex", gap: "10px" }}>
-                        {[
-                            { label: "TOTAL", value: counts.total, color: "#00e5cc" },
-                            { label: "INVESTIGATED", value: counts.investigated, color: "#00e5cc" },
-                            { label: "IN PROGRESS", value: counts.progress, color: "#ffd700" },
-                            { label: "CLOSED", value: counts.closed, color: "#4ade80" },
-                        ].map(({ label, value, color }) => (
-                            <div key={label} style={{ background: "#0a1628", border: `1px solid ${color}44`, borderRadius: "6px", padding: "8px 14px", textAlign: "center" }}>
-                                <div style={{ fontSize: "16px", fontWeight: 700, color }}>{value}</div>
-                                <div style={{ fontSize: "9px", color: "#4a6a8a", letterSpacing: "1px" }}>{label}</div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-
-                {/* Filter tabs */}
-                <div style={{ display: "flex", gap: "8px", marginBottom: "20px" }}>
-                    {["ALL", "Under Progress", "Investigated", "Closed"].map(f => (
-                        <button key={f} onClick={() => setFilter(f)}
-                            style={{ background: filter === f ? "#00e5cc22" : "transparent", border: `1px solid ${filter === f ? "#00e5cc" : "#1a2a4a"}`, color: filter === f ? "#00e5cc" : "#4a6a8a", padding: "6px 16px", fontSize: "10px", fontFamily: "inherit", cursor: "pointer", borderRadius: "4px", letterSpacing: "1px" }}>
-                            {f === "ALL" ? "ALL" : STATUS_CONFIG[f]?.label || f}
-                        </button>
-                    ))}
-                </div>
-
-                {/* Empty state */}
-                {filtered.length === 0 && (
-                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-                        style={{ background: "#0a1628", border: "1px solid #1a2a4a", borderRadius: "8px", padding: "48px", textAlign: "center", color: "#4a6a8a" }}>
-                        <div style={{ fontSize: "32px", marginBottom: "12px" }}>🔍</div>
-                        <div style={{ fontSize: "13px" }}>No investigations found. Open an alert and click "Open Investigation" to start.</div>
-                    </motion.div>
-                )}
-
-                {/* Investigation cards */}
-                <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                    {filtered.map((inv, i) => {
-                        const cfg = STATUS_CONFIG[inv.investigation_status] || { color: "#4a6a8a", icon: "?", label: inv.investigation_status };
-                        return (
-                            <motion.div key={inv.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
-                                style={{ background: "#0a1628", border: `1px solid ${cfg.color}33`, borderLeft: `3px solid ${cfg.color}`, borderRadius: "8px", padding: "18px 20px" }}>
-
-                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "10px" }}>
-                                    {/* Left info */}
-                                    <div>
-                                        <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
-                                            <span style={{ color: "#4a6a8a", fontSize: "11px" }}>#{inv.id}</span>
-                                            <span style={{ background: `${SEV_COLOR[inv.severity]}22`, border: `1px solid ${SEV_COLOR[inv.severity]}44`, color: SEV_COLOR[inv.severity], fontSize: "10px", padding: "2px 8px", borderRadius: "4px" }}>{inv.severity}</span>
-                                            <span style={{ background: "#1a2a4a", color: "#c0d8f0", fontSize: "11px", padding: "2px 8px", borderRadius: "4px" }}>{inv.attack_type}</span>
-                                        </div>
-                                        <div style={{ fontSize: "15px", color: "#00e5cc", fontWeight: 700, marginBottom: "4px" }}>{inv.source_ip}</div>
-                                        <div style={{ fontSize: "11px", color: "#8a9aaa", marginBottom: "6px" }}>{inv.event_type || inv.log_source}</div>
-                                        {inv.description && (
-                                            <div style={{ fontSize: "11px", color: "#607080", maxWidth: "500px", lineHeight: 1.5 }}>{inv.description}</div>
-                                        )}
-                                    </div>
-
-                                    {/* Right status */}
-                                    <div style={{ textAlign: "right", minWidth: "200px" }}>
-                                        <div style={{ background: `${cfg.color}22`, border: `1px solid ${cfg.color}44`, borderRadius: "6px", padding: "10px 16px", marginBottom: "8px", display: "inline-block" }}>
-                                            <div style={{ fontSize: "11px", color: "#4a6a8a", marginBottom: "4px" }}>STATUS</div>
-                                            <div style={{ fontSize: "13px", color: cfg.color, fontWeight: 700 }}>{cfg.icon} {cfg.label}</div>
-                                        </div>
-                                        <div style={{ fontSize: "11px", color: "#4a6a8a" }}>
-                                            Analyst: <span style={{ color: "#00e5cc" }}>{inv.assigned_to || "—"}</span>
-                                        </div>
-                                        <div style={{ fontSize: "10px", color: "#4a6a8a", marginTop: "4px" }}>
-                                            {inv.investigated_at ? new Date(inv.investigated_at).toLocaleString() : ""}
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Investigation notes */}
-                                {inv.investigation_reason && (
-                                    <div style={{ marginTop: "14px", background: "#060e1c", border: "1px solid #1a2a4a", borderRadius: "6px", padding: "12px" }}>
-                                        <div style={{ fontSize: "10px", color: "#4a6a8a", letterSpacing: "1px", marginBottom: "6px" }}>ANALYST NOTES</div>
-                                        <div style={{ fontSize: "12px", color: "#8a9aaa", lineHeight: 1.6 }}>{inv.investigation_reason}</div>
-                                    </div>
-                                )}
-
-                                {/* AI report if available */}
-                                {inv.analysis_report && (
-                                    <details style={{ marginTop: "10px" }}>
-                                        <summary style={{ fontSize: "10px", color: "#00e5cc", cursor: "pointer", letterSpacing: "1px" }}>VIEW AI ANALYSIS REPORT</summary>
-                                        <pre style={{ marginTop: "10px", background: "#060e1c", border: "1px solid #1a3a5a", borderRadius: "6px", padding: "14px", fontSize: "11px", color: "#c0d8f0", whiteSpace: "pre-wrap", wordBreak: "break-word", lineHeight: 1.6, fontFamily: "inherit" }}>
-                                            {inv.analysis_report}
-                                        </pre>
-                                    </details>
-                                )}
-                            </motion.div>
-                        );
-                    })}
-                </div>
+  return (
+    <div className="app-shell">
+      <Navbar />
+      <main className="app-main">
+        <div className="page-wrap">
+          <header className="page-topline">
+            <div>
+              <div className="eyebrow">Case work / 03</div>
+              <h1 className="page-title">Investigations</h1>
+              <p className="page-subtitle">Analyst review records, investigation notes, and the current disposition recorded for each alert.</p>
             </div>
+            <div className="page-meta">
+              <span className={"status-chip " + (apiError ? "is-error" : loading ? "is-neutral" : "is-healthy")}><span className="status-dot" />{apiError ? "Refresh error" : loading ? "Loading" : "Endpoint checked"}</span>
+              <button className="button-secondary" type="button" onClick={() => { setLoading(true); setRefreshTick((tick) => tick + 1); }}>Refresh now</button>
+            </div>
+          </header>
+
+          {apiError && <div className="inline-alert" role="alert">{apiError}</div>}
+
+          <section className="investigation-counts" aria-label="Investigation counts">
+            {[
+              { label: "Total records", value: counts.total },
+              { label: "Under progress", value: counts.progress },
+              { label: "Investigated", value: counts.investigated },
+              { label: "Closed", value: counts.closed },
+            ].map((item) => <article className="count-card" key={item.label}><div className="count-value">{item.value.toLocaleString()}</div><div className="count-label">{item.label}</div></article>)}
+          </section>
+
+          <section className="panel">
+            <div className="panel-header">
+              <div><h2 className="panel-title">Investigation register</h2><div className="panel-kicker">{filtered.length} displayed of {investigations.length} records</div></div>
+              <div className="filter-row" aria-label="Filter investigations">
+                {[
+                  { value: "ALL", label: "All statuses" },
+                  { value: "Under Progress", label: "Under progress" },
+                  { value: "Investigated", label: "Investigated" },
+                  { value: "Closed", label: "Closed" },
+                ].map((item) => <button className="filter-button" type="button" key={item.value} aria-pressed={filter === item.value} onClick={() => setFilter(item.value)}>{item.label}</button>)}
+              </div>
+            </div>
+
+            {filtered.length === 0 ? (
+              <div className="empty-state">
+                <div className="empty-mark">—</div>
+                <p className="empty-title">{loading ? "Loading investigation records" : apiError ? "Investigation data unavailable" : investigations.length ? "No records match this status" : "No investigations recorded"}</p>
+                <p className="empty-copy">{loading ? "Waiting for the authenticated API response." : apiError ? "Check the backend connection and try again." : investigations.length ? "Select another status to view the remaining records." : "When an alert is moved into the investigation workflow, its record and analyst notes will appear here."}</p>
+              </div>
+            ) : (
+              <div className="investigation-list" style={{ padding: 12 }}>
+                {filtered.map((item) => {
+                  const status = STATUS_CONFIG[item.investigation_status] || { label: item.investigation_status || "Unspecified", className: "" };
+                  return (
+                    <article className="investigation-card" key={item.id}>
+                      <div className="investigation-card-top">
+                        <div>
+                          <div className="investigation-details">
+                            <span className="cell-mono">ALERT #{item.id}</span>
+                            <Severity value={item.severity} />
+                            <span className="pill">{item.attack_type || "Unclassified"}</span>
+                          </div>
+                          <h3 className="investigation-source">{item.source_ip || "Source not recorded"}</h3>
+                          <div className="investigation-meta">{item.event_type || item.log_source || "Event type not recorded"} · {formatTimestamp(item.timestamp)}</div>
+                          {item.description && <p className="investigation-description">{item.description}</p>}
+                        </div>
+                        <div>
+                          <div className={"investigation-status " + status.className}>STATUS · {status.label}</div>
+                          <div className="investigation-meta" style={{ marginTop: 8 }}>Analyst: {item.assigned_to || "Not assigned"}</div>
+                          <div className="investigation-meta" style={{ marginTop: 4 }}>Updated: {formatTimestamp(item.investigated_at)}</div>
+                        </div>
+                      </div>
+                      {item.investigation_reason && <div className="investigation-notes"><strong>Analyst notes</strong><br />{item.investigation_reason}</div>}
+                      {item.analysis_report && (
+                        <details style={{ marginTop: 12 }}>
+                          <summary style={{ cursor: "pointer", color: "var(--signal)", fontSize: 11 }}>View AI analysis report</summary>
+                          <pre className="investigation-notes">{item.analysis_report}</pre>
+                        </details>
+                      )}
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </section>
         </div>
-    );
+      </main>
+    </div>
+  );
 }

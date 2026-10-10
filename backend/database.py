@@ -1,10 +1,11 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
+from backend.config import get_settings
 
-DATABASE_URL = "sqlite:///./siem.db"
+settings = get_settings()
 
 engine = create_engine(
-    DATABASE_URL,
+    settings.DATABASE_URL,
     connect_args={"check_same_thread": False}
 )
 
@@ -16,7 +17,7 @@ SessionLocal = sessionmaker(
 
 Base = declarative_base()
 
-# THIS WAS MISSING
+
 def get_db():
     db = SessionLocal()
     try:
