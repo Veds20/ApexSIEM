@@ -62,8 +62,8 @@ export default function Incidents() {
     setDetailLoading(true);
 
     Promise.all([
-      api(\`/incidents/\${selected.id}/alerts\`),
-      api(\`/soar/actions?incident_id=\${selected.id}\`),
+      api(`/incidents/${selected.id}/alerts`),
+      api(`/soar/actions?incident_id=${selected.id}`),
     ]).then(([alertRows, actionRows]) => {
       if (!active) return;
       setAlerts(Array.isArray(alertRows) ? alertRows : []);
@@ -82,7 +82,7 @@ export default function Incidents() {
     setNotice("");
     setError("");
     try {
-      const updated = await api(\`/incidents/\${selected.id}\`, {
+      const updated = await api(`/incidents/${selected.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status, resolution: resolution.trim() || null }),
@@ -112,14 +112,14 @@ export default function Incidents() {
         body: JSON.stringify({
           action_type: "block_ip",
           target: { ip: source },
-          reason: \`Analyst-requested containment for incident \${selected.incident_id}\`,
+          reason: `Analyst-requested containment for incident ${selected.incident_id}`,
           incident_id: selected.id,
           alert_ids: alerts.map((alert) => alert.id),
           requires_approval: true,
         }),
       });
-      setNotice(\`Approval request created for source \${source}; no block has been executed by this request alone.\`);
-      setActions(await api(\`/soar/actions?incident_id=\${selected.id}\`));
+      setNotice(`Approval request created for source ${source}; no block has been executed by this request alone.`);
+      setActions(await api(`/soar/actions?incident_id=${selected.id}`));
     } catch (caught) {
       setError(caught.message || "The response approval request failed.");
     }
@@ -162,7 +162,7 @@ export default function Incidents() {
                     onClick={() => { setSelected(incident); setNotice(""); }}
                   >
                     <div className="incident-select-top">
-                      <span className="incident-select-id">{incident.incident_id || \`CASE-\${incident.id}\`}</span>
+                      <span className="incident-select-id">{incident.incident_id || `CASE-${incident.id}`}</span>
                       <IncidentSeverity value={incident.severity} />
                     </div>
                     <h3 className="incident-select-title">{incident.title || "Untitled incident"}</h3>
@@ -188,7 +188,7 @@ export default function Incidents() {
                 <>
                   <header className="incident-detail-head">
                     <div>
-                      <div className="eyebrow">{selected.incident_id || \`CASE-\${selected.id}\`}</div>
+                      <div className="eyebrow">{selected.incident_id || `CASE-${selected.id}`}</div>
                       <h2>{selected.title || "Untitled incident"}</h2>
                       <p>{selected.description || "No incident narrative has been recorded."}</p>
                     </div>
@@ -213,7 +213,7 @@ export default function Incidents() {
                       {parseTimeline(selected.timeline).length ? (
                         <div className="incident-timeline">
                           {parseTimeline(selected.timeline).map((event, index) => (
-                            <article className="incident-timeline-item" key={\`\${event.timestamp || "event"}-\${index}\`}>
+                            <article className="incident-timeline-item" key={`${event.timestamp || "event"}-${index}`}>
                               <time className="incident-timeline-time">{when(event.timestamp)}</time>
                               <strong>{pretty(event.event_type || event.attack_type || "Event")}</strong>
                               <div>{event.description || event.source_ip || "No additional narrative recorded."}</div>
@@ -224,13 +224,13 @@ export default function Incidents() {
                     </section>
 
                     <section className="incident-section">
-                      <h3 className="incident-section-title">Linked evidence {detailLoading ? "· loading" : \`· \${alerts.length} alerts\`}</h3>
+                      <h3 className="incident-section-title">Linked evidence {detailLoading ? "· loading" : `· ${alerts.length} alerts`}</h3>
                       {alerts.length ? alerts.map((alert) => (
                         <article className="incident-alert-row" key={alert.id}>
                           <div>
                             <div className="incident-alert-title">{pretty(alert.attack_type)}</div>
                             <div className="incident-alert-description">{alert.description || alert.event_type || "No event narrative retained."}</div>
-                            <div className="incident-alert-meta">{alert.log_source || "Source not recorded"} · {when(alert.timestamp)} · {alert.source_ip || "Source IP not recorded"}{alert.destination_ip ? \` → \${alert.destination_ip}\` : ""}</div>
+                            <div className="incident-alert-meta">{alert.log_source || "Source not recorded"} · {when(alert.timestamp)} · {alert.source_ip || "Source IP not recorded"}{alert.destination_ip ? ` → ${alert.destination_ip}` : ""}</div>
                           </div>
                           <IncidentSeverity value={alert.severity} />
                         </article>
