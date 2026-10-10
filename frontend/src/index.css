@@ -166,7 +166,7 @@ a { color: inherit; }
 .status-chip.is-error .status-dot { background: var(--danger); }
 .status-chip.is-neutral .status-dot { background: #99998f; }
 
-.priority-metric-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); max-width: 800px; }
+.metric-grid.priority-metric-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); max-width: 800px; }
 .metric-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 11px; margin-bottom: 20px; }
 .metric-card { min-width: 0; padding: 15px 16px 16px; border: 1px solid var(--line); border-radius: 5px; background: var(--paper); }
 .metric-label { display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--muted); font-family: var(--mono); font-size: 9px; letter-spacing: .08em; line-height: 1.4; text-transform: uppercase; }
@@ -311,6 +311,7 @@ a { color: inherit; }
   .app-main { padding: 21px 13px 28px; }
   .page-topline { margin-bottom: 20px; }
   .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .metric-grid.priority-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .metric-card { padding: 12px; }
   .metric-value { font-size: 25px; }
   .chart-grid { grid-template-columns: 1fr; }
