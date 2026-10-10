@@ -4,6 +4,7 @@ const NAV_ITEMS = [
   { label: "Overview", path: "/dashboard", mark: "01" },
   { label: "Priority queue", path: "/priority", mark: "02" },
   { label: "Investigations", path: "/investigations", mark: "03" },
+  { label: "Incident cases", path: "/incidents", mark: "04" },
 ];
 
 export default function Navbar() {
