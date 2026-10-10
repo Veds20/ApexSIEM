@@ -47,7 +47,7 @@ export default function Navbar() {
           Evidence first.<br />
           Decisions grounded in telemetry.
         </div>
-        <div className="sidebar-version">ANALYST WORKSPACE · LOCAL INSTANCE</div>
+        <div className="sidebar-version">ANALYST WORKSPACE · AUTHENTICATED SESSION</div>
         <button className="logout-button" type="button" onClick={logout}>
           Sign out <span aria-hidden="true">↗</span>
         </button>

@@ -162,9 +162,11 @@ a { color: inherit; }
 .status-chip { display: inline-flex; align-items: center; gap: 7px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 4px; background: #f8f7f1; color: #55574f; font-family: var(--mono); font-size: 10px; letter-spacing: .04em; text-transform: uppercase; }
 .status-dot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: var(--sage); }
 .status-chip.is-warn .status-dot { background: var(--amber); }
+.status-chip.is-healthy .status-dot { background: var(--sage); }
 .status-chip.is-error .status-dot { background: var(--danger); }
 .status-chip.is-neutral .status-dot { background: #99998f; }
 
+.priority-metric-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); max-width: 800px; }
 .metric-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 11px; margin-bottom: 20px; }
 .metric-card { min-width: 0; padding: 15px 16px 16px; border: 1px solid var(--line); border-radius: 5px; background: var(--paper); }
 .metric-label { display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--muted); font-family: var(--mono); font-size: 9px; letter-spacing: .08em; line-height: 1.4; text-transform: uppercase; }

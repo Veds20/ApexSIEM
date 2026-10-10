@@ -16,7 +16,7 @@ export default function AnalyzeModal({ alert, onClose }) {
     const [investLoading, setInvestLoading] = useState(false);
     const [investError, setInvestError] = useState("");
 
-    const sevColor = { HIGH: "#b84636", MEDIUM: "#a97619", LOW: "#d65a35" }[alert.severity] || "#aaa";
+    const sevColor = { HIGH: "#b84636", MEDIUM: "#a97619", LOW: "#d65a35" }[alert.severity] || "#707168";
 
     const runAnalysis = async () => {
         setLoading(true);
@@ -91,7 +91,7 @@ export default function AnalyzeModal({ alert, onClose }) {
                             <div style={{ color: "#d65a35", fontSize: "11px", letterSpacing: "2px", marginBottom: "6px" }}>THREAT ANALYSIS — ALERT #{alert.id}</div>
                             <div style={{ fontSize: "18px", fontWeight: 700, color: "#282a25" }}>{alert.attack_type?.replace(/_/g, " ").toUpperCase()}</div>
                         </div>
-                        <button onClick={onClose} style={{ background: "transparent", border: "1px solid #d9d8ce", color: "#aaa", cursor: "pointer", padding: "6px 12px", fontFamily: "inherit", borderRadius: "4px" }}>✕ CLOSE</button>
+                        <button onClick={onClose} style={{ background: "transparent", border: "1px solid #d9d8ce", color: "#707168", cursor: "pointer", padding: "6px 12px", fontFamily: "inherit", borderRadius: "4px" }}>✕ CLOSE</button>
                     </div>
 
                     {/* Fields grid */}
@@ -115,9 +115,9 @@ export default function AnalyzeModal({ alert, onClose }) {
 
                     {/* Description */}
                     {alert.description && (
-                        <div style={{ background: "#f1f0e9", border: "1px solid #1a3a2a", borderRadius: "6px", padding: "14px", marginBottom: "16px" }}>
+                        <div style={{ background: "#f1f0e9", border: "1px solid #d9d8ce", borderRadius: "6px", padding: "14px", marginBottom: "16px" }}>
                             <div style={{ fontSize: "10px", color: "#d65a35", letterSpacing: "1px", marginBottom: "8px" }}>EVENT DESCRIPTION (from real log fields)</div>
-                            <div style={{ fontSize: "13px", color: "#c0d8c0", lineHeight: 1.6 }}>{alert.description}</div>
+                            <div style={{ fontSize: "13px", color: "#42443d", lineHeight: 1.6 }}>{alert.description}</div>
                         </div>
                     )}
 
@@ -139,7 +139,7 @@ export default function AnalyzeModal({ alert, onClose }) {
                         )}
 
                         {error && (
-                            <div style={{ background: "#1a0a0a", border: "1px solid #b84636", borderRadius: "6px", padding: "14px", marginBottom: "16px", color: "#b84636", fontSize: "13px" }}>
+                            <div style={{ background: "#fbefeb", border: "1px solid #b84636", borderRadius: "6px", padding: "14px", marginBottom: "16px", color: "#b84636", fontSize: "13px" }}>
                                 ⚠ {error}
                             </div>
                         )}

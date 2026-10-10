@@ -135,7 +135,7 @@ export default function Dashboard() {
   });
 
   const metrics = [
-    { label: "Alerts in view", value: stats.total || 0, tone: "tone-neutral", note: "Returned by the stats endpoint" },
+    { label: "Total alerts", value: stats.total || 0, tone: "tone-neutral", note: "Reported by the stats endpoint" },
     { label: "High severity", value: stats.high || 0, tone: "tone-high", note: "Requires analyst triage" },
     { label: "Medium", value: stats.medium || 0, tone: "tone-medium", note: "Review supporting context" },
     { label: "Low", value: stats.low || 0, tone: "tone-low", note: "Lower assigned severity" },

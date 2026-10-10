@@ -75,7 +75,7 @@ export default function Priority() {
 
           {apiError && <div className="inline-alert" role="alert">{apiError}</div>}
 
-          <section className="metric-grid" aria-label="Priority metrics" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))", maxWidth: 800 }}>
+          <section className="metric-grid priority-metric-grid" aria-label="Priority metrics">
             {[
               { label: "Priority records", value: alerts.length, tone: "tone-neutral", note: "Current response size" },
               { label: "High severity", value: critical, tone: "tone-high", note: "Classified HIGH" },
